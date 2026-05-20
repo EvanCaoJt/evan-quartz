@@ -18,8 +18,8 @@ related:
 
 这篇教程将带你从零走完"本地笔记→公开网站"的全部流程——即使你没有任何建站经验，也能很快地完成部署。
 
-**总体思路：**用 Obsidian 在本地以 Markdown 格式写作；用 Quartz 把这些 Markdown 文件转换成静态网站；通过 GitHub 管理版本，并对接 Cloudflare Pages 实现自动化部署。**你只需在 Obsidian 里写好文章、运行一行脚本，网站就会自动更新上线**。
-![[04_public/assets/Pasted image 20260520204941.png]]
+**总体思路：** 用 Obsidian 在本地以 Markdown 格式写作；用 Quartz 把这些 Markdown 文件转换成静态网站；通过 GitHub 管理版本，并对接 Cloudflare Pages 实现自动化部署。**你只需在 Obsidian 里写好文章、运行一行脚本，网站就会自动更新上线**。
+![[assets/Pasted-image-20260520204941.png]]
 
 > [!warning] 提醒
 > 本教程中所有涉及本地路径的地方（如 `C:\Users\<用户名>\...`）请替换为你自己电脑实际用户名和路径，GitHub 用户名、邮箱等个人信息也请改为你自己的。
@@ -44,13 +44,12 @@ Obsidian 负责：
 - 维护长期内容资产
 
 推荐建立一个单独的公开目录`Public/`，建议 `Public/` 公开区这样设计：
-
 ```
 Obsidian Vault/
 └── Public/
-		├── index.md         #定义网站首页
-		├── Notes/           #存放公开笔记
-		└── assets/          #存放图片、图表附件
+     ├── index.md    # 定义网站首页
+     ├── Notes/      # 存放公开笔记
+     └── assets/     # 存放图片、图表附件
 ```
 
 只有 `Public/` 里的内容会被同步到 Quartz。
@@ -365,7 +364,7 @@ git push
 > [!tip] 恭喜
 > 到这一步，你拥有了属于你的知识笔记网站。
 
-![[04_public/assets/Pasted image 20260520205115.png]]
+![[assets/Pasted-image-20260520205115.png]]
 ## 八、日常发布流程
 
 最终，你每天只需要这样做：
