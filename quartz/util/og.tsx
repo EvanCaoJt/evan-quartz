@@ -14,6 +14,16 @@ import { styleText } from "util"
 const defaultHeaderWeight = [700]
 const defaultBodyWeight = [400]
 
+const NOTO_SANS_SC = "Noto Sans SC"
+const cjkFontWeights: FontWeight[] = [400, 700]
+// Subset TTF from fontsource; full Noto Sans SC from Google is ~10MB per weight.
+const NOTO_SANS_SC_FONT_SOURCE =
+  "https://cdn.jsdelivr.net/fontsource/fonts/noto-sans-sc@5.2.5/chinese-simplified"
+
+function fontWithCjkFallback(font: string): string {
+  return `${font}, ${NOTO_SANS_SC}`
+}
+
 export async function getSatoriFonts(headerFont: FontSpecification, bodyFont: FontSpecification) {
   // Get all weights for header and body fonts
   const headerWeights: FontWeight[] = (
@@ -51,15 +61,28 @@ export async function getSatoriFonts(headerFont: FontSpecification, bodyFont: Fo
     }
   })
 
-  const [headerFonts, bodyFonts] = await Promise.all([
+  const cjkFontPromises = cjkFontWeights.map(async (weight) => {
+    const data = await fetchCjkFont(weight)
+    if (!data) return null
+    return {
+      name: NOTO_SANS_SC,
+      data,
+      weight,
+      style: "normal" as const,
+    }
+  })
+
+  const [headerFonts, bodyFonts, cjkFonts] = await Promise.all([
     Promise.all(headerFontPromises),
     Promise.all(bodyFontPromises),
+    Promise.all(cjkFontPromises),
   ])
 
   // Filter out any failed fetches and combine header and body fonts
   const fonts: SatoriOptions["fonts"] = [
     ...headerFonts.filter((font): font is NonNullable<typeof font> => font !== null),
     ...bodyFonts.filter((font): font is NonNullable<typeof font> => font !== null),
+    ...cjkFonts.filter((font): font is NonNullable<typeof font> => font !== null),
   ]
 
   return fonts
@@ -88,14 +111,20 @@ export async function fetchTtf(
     // ignore errors and fetch font
   }
 
-  // Get css file from google fonts
+  // Get css file from google fonts. Satori only supports TTF/OTF/WOFF, not WOFF2.
+  // Google serves WOFF2 to modern browsers, so use a legacy user agent to get TTF URLs.
   const cssResponse = await fetch(
     `https://fonts.googleapis.com/css2?family=${fontName}:wght@${weight}`,
+    {
+      headers: {
+        "User-Agent": "Mozilla/5.0 (compatible; MSIE 8.0; Windows NT 6.1; Trident/4.0)",
+      },
+    },
   )
   const css = await cssResponse.text()
 
-  // Extract .ttf url from css file
-  const urlRegex = /url\((https:\/\/fonts.gstatic.com\/s\/.*?.ttf)\)/g
+  // Extract font url from css file (direct .ttf paths or /l/font?kit= endpoints)
+  const urlRegex = /url\((https:\/\/fonts\.gstatic\.com\/[^)]+)\)/g
   const match = urlRegex.exec(css)
 
   if (!match) {
@@ -115,6 +144,52 @@ export async function fetchTtf(
   await fs.writeFile(cachePath, fontData)
 
   return fontData
+}
+
+/**
+ * Load Noto Sans SC for CJK glyphs in OG images. Checks local TTF first, then
+ * downloads a chinese-simplified subset from fontsource (Satori needs TTF/OTF/WOFF, not WOFF2).
+ */
+async function fetchCjkFont(weight: FontWeight): Promise<Buffer<ArrayBufferLike> | undefined> {
+  const variant = weight === 700 ? "Bold" : "Regular"
+  const localPath = path.join(QUARTZ, "static", "fonts", `NotoSansSC-${variant}.ttf`)
+  try {
+    await fs.access(localPath)
+    return fs.readFile(localPath)
+  } catch {
+    // no local override
+  }
+
+  const cacheKey = `NotoSansSC-${weight}`
+  const cacheDir = path.join(QUARTZ, ".quartz-cache", "fonts")
+  const cachePath = path.join(cacheDir, cacheKey)
+
+  try {
+    await fs.access(cachePath)
+    return fs.readFile(cachePath)
+  } catch {
+    // not cached yet
+  }
+
+  const url = `${NOTO_SANS_SC_FONT_SOURCE}-${weight}-normal.ttf`
+  try {
+    const fontResponse = await fetch(url)
+    if (!fontResponse.ok) {
+      throw new Error(fontResponse.statusText)
+    }
+    const fontData = Buffer.from(await fontResponse.arrayBuffer())
+    await fs.mkdir(cacheDir, { recursive: true })
+    await fs.writeFile(cachePath, fontData)
+    return fontData
+  } catch {
+    console.log(
+      styleText(
+        "yellow",
+        `\nWarning: Failed to fetch font ${NOTO_SANS_SC} with weight ${weight}`,
+      ),
+    )
+    return
+  }
 }
 
 export type SocialImageOptions = {
@@ -207,7 +282,7 @@ export const defaultImage: SocialImageOptions["imageStructure"] = ({
         width: "100%",
         backgroundColor: cfg.theme.colors[colorScheme].light,
         padding: "2.5rem",
-        fontFamily: bodyFont,
+        fontFamily: fontWithCjkFallback(bodyFont),
       }}
     >
       {/* Header Section */}
@@ -234,7 +309,7 @@ export const defaultImage: SocialImageOptions["imageStructure"] = ({
             display: "flex",
             fontSize: 32,
             color: cfg.theme.colors[colorScheme].gray,
-            fontFamily: bodyFont,
+            fontFamily: fontWithCjkFallback(bodyFont),
           }}
         >
           {cfg.baseUrl}
@@ -253,7 +328,7 @@ export const defaultImage: SocialImageOptions["imageStructure"] = ({
           style={{
             margin: 0,
             fontSize: useSmallerFont ? 64 : 72,
-            fontFamily: headerFont,
+            fontFamily: fontWithCjkFallback(headerFont),
             fontWeight: 700,
             color: cfg.theme.colors[colorScheme].dark,
             lineHeight: 1.2,
