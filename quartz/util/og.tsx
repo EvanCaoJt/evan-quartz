@@ -24,6 +24,15 @@ function fontWithCjkFallback(font: string): string {
   return `${font}, ${NOTO_SANS_SC}`
 }
 
+/** Satori accepts TTF, OTF, and WOFF — not WOFF2 or Google's /l/font?kit= payloads. */
+function isValidFontData(data: Buffer): boolean {
+  if (data.length < 4) return false
+  const tag = data.subarray(0, 4).toString("ascii")
+  if (tag === "wOF2") return false
+  if (tag === "wOFF" || tag === "true" || tag === "OTTO") return true
+  return data.readUInt32BE(0) === 0x00010000
+}
+
 export async function getSatoriFonts(headerFont: FontSpecification, bodyFont: FontSpecification) {
   // Get all weights for header and body fonts
   const headerWeights: FontWeight[] = (
@@ -106,25 +115,20 @@ export async function fetchTtf(
   // Check if font exists in cache
   try {
     await fs.access(cachePath)
-    return fs.readFile(cachePath)
-  } catch (error) {
-    // ignore errors and fetch font
+    const cached = await fs.readFile(cachePath)
+    if (isValidFontData(cached)) return cached
+    await fs.unlink(cachePath)
+  } catch {
+    // cache miss or invalid — fetch below
   }
 
-  // Get css file from google fonts. Satori only supports TTF/OTF/WOFF, not WOFF2.
-  // Google serves WOFF2 to modern browsers, so use a legacy user agent to get TTF URLs.
   const cssResponse = await fetch(
     `https://fonts.googleapis.com/css2?family=${fontName}:wght@${weight}`,
-    {
-      headers: {
-        "User-Agent": "Mozilla/5.0 (compatible; MSIE 8.0; Windows NT 6.1; Trident/4.0)",
-      },
-    },
   )
   const css = await cssResponse.text()
 
-  // Extract font url from css file (direct .ttf paths or /l/font?kit= endpoints)
-  const urlRegex = /url\((https:\/\/fonts\.gstatic\.com\/[^)]+)\)/g
+  // Only use direct .ttf URLs. Legacy user agents get /l/font?kit= blobs Satori cannot parse.
+  const urlRegex = /url\((https:\/\/fonts\.gstatic\.com\/[^)]+\.ttf)\)/g
   const match = urlRegex.exec(css)
 
   if (!match) {
@@ -137,9 +141,18 @@ export async function fetchTtf(
     return
   }
 
-  // fontData is an ArrayBuffer containing the .ttf file data
   const fontResponse = await fetch(match[1])
   const fontData = Buffer.from(await fontResponse.arrayBuffer())
+  if (!isValidFontData(fontData)) {
+    console.log(
+      styleText(
+        "yellow",
+        `\nWarning: Downloaded font ${rawFontName} weight ${weight} is not a supported format`,
+      ),
+    )
+    return
+  }
+
   await fs.mkdir(cacheDir, { recursive: true })
   await fs.writeFile(cachePath, fontData)
 
@@ -155,7 +168,8 @@ async function fetchCjkFont(weight: FontWeight): Promise<Buffer<ArrayBufferLike>
   const localPath = path.join(QUARTZ, "static", "fonts", `NotoSansSC-${variant}.ttf`)
   try {
     await fs.access(localPath)
-    return fs.readFile(localPath)
+    const local = await fs.readFile(localPath)
+    if (isValidFontData(local)) return local
   } catch {
     // no local override
   }
@@ -166,7 +180,9 @@ async function fetchCjkFont(weight: FontWeight): Promise<Buffer<ArrayBufferLike>
 
   try {
     await fs.access(cachePath)
-    return fs.readFile(cachePath)
+    const cached = await fs.readFile(cachePath)
+    if (isValidFontData(cached)) return cached
+    await fs.unlink(cachePath)
   } catch {
     // not cached yet
   }
@@ -178,6 +194,9 @@ async function fetchCjkFont(weight: FontWeight): Promise<Buffer<ArrayBufferLike>
       throw new Error(fontResponse.statusText)
     }
     const fontData = Buffer.from(await fontResponse.arrayBuffer())
+    if (!isValidFontData(fontData)) {
+      throw new Error("unsupported font format")
+    }
     await fs.mkdir(cacheDir, { recursive: true })
     await fs.writeFile(cachePath, fontData)
     return fontData
