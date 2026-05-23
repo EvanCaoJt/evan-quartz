@@ -7,7 +7,7 @@ tags:
   - cli
   - AI
 created: 2026-05-18
-description: 通过 Moon Bridge 协议转换，让 Codex 使用 DeepSeek 模型的完整配置指南（Windows/macOS）。
+description: 通过 Moon Bridge 协议转换，让 Codex 使用 DeepSeek 模型的完整配置指南。
 ---
 
 Codex 主要通过 OpenAI Responses API 与模型通信，而 DeepSeek 不兼容这种协议，所以 Codex 直接调用 DeepSeek API 是行不通的。
